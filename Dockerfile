@@ -12,10 +12,14 @@ RUN apt-get update && apt-get install -y \
     libpq-dev \
     libzip-dev
 
+# Install Node.js & NPM (Wajib untuk compile React Inertia)
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs
+
 # Clear cache
 RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Install PHP extensions (Termasuk pgsql & zip!)
+# Install PHP extensions
 RUN docker-php-ext-install pdo_pgsql mbstring exif pcntl bcmath gd zip
 
 # Get latest Composer
@@ -29,6 +33,10 @@ COPY . /var/www
 
 # Install composer dependencies
 RUN composer install --no-dev --optimize-autoloader
+
+# Install NPM dependencies & build assets React Vite
+RUN npm install
+RUN npm run build
 
 # Expose port and start php-fpm server
 EXPOSE 80
