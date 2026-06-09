@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Facades\URL;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -20,6 +21,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        Vite::prefetch(concurrency: 3);
+        // Memaksa semua URL menggunakan HTTPS jika berjalan di Render (Production)
+        if (config('app.env') === 'production' || env('RENDER')) {
+            URL::forceScheme('https');
+        }
     }
 }
