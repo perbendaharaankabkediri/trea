@@ -15,12 +15,14 @@ use Inertia\Inertia;
 | Public Routes
 |--------------------------------------------------------------------------
 */
+// PERBAIKAN: Mengubah route '/' agar mengembalikan JSON teks, bukan Inertia/React
 Route::get('/', function () {
-    return Inertia::render('Welcome', [
-        'canLogin' => Route::has('login'),
-        'canRegister' => Route::has('register'),
-        'laravelVersion' => Application::VERSION,
-        'phpVersion' => PHP_VERSION,
+    return response()->json([
+        'app_name' => 'Trea API Backend',
+        'status' => 'Online',
+        'message' => 'Laravel backend is running successfully!',
+        'laravel_version' => Application::VERSION,
+        'php_version' => PHP_VERSION
     ]);
 });
 
@@ -151,7 +153,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/rekonsiliasi/api/data-periode', [KasdaController::class, 'rekonGetDataPeriode'])->name('rekon.getDataPeriode');
     });
     
-
 });
 
 require __DIR__.'/auth.php';
