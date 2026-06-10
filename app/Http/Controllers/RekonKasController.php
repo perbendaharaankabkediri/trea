@@ -334,70 +334,51 @@ class RekonKasController extends Controller
         $grandTotal = null;
 
         if ($bulan) {
+            $bulanStr = str_pad($bulan, 2, '0', STR_PAD_LEFT);
+
+            // ⚡ Tarik summary SP2D, SPJ, STS, dan Kas untuk SEMUA SKPD dalam 1 kali query gabungan
+            $sp2d = DB::table('tabel_sp2d')->where('tahun', $tahun)->where('bulan', $bulanStr)->selectRaw("kode_skpd, SUM(nilai_ls) as ls, SUM(nilai_upgu) as up_gu, SUM(nilai_tu) as tu, SUM(nilai_gukkpd) as gukkpd")->groupBy('kode_skpd')->get()->keyBy('kode_skpd');
+            $spj = DB::table('tabel_spj')->where('tahun', $tahun)->where('bulan', $bulanStr)->selectRaw("kode_skpd, SUM(nilai_ls) as spj_ls, SUM(nilai_upgu) as spj_up_gu, SUM(nilai_tu) as spj_tu, SUM(nilai_gukkpd) as spj_gukkpd")->groupBy('kode_skpd')->get()->keyBy('kode_skpd');
+            $sts = DB::table('tabel_sts')->where('tahun', $tahun)->where('bulan', $bulanStr)->selectRaw("kode_skpd, SUM(sts_upgu) as sts_up_gu, SUM(sts_tu) as sts_tu, SUM(cp_ls) as cp_ls, SUM(cp_upgu) as cp_up_gu, SUM(cp_tu) as cp_tu")->groupBy('kode_skpd')->get()->keyBy('kode_skpd');
+            $kasReal = DB::table('tabel_posisi_kas')->where('tahun', $tahun)->where('bulan', $bulanStr)->selectRaw("kode_skpd, SUM(kas_di_bank) as bank, SUM(kas_tunai) as tunai")->groupBy('kode_skpd')->get()->keyBy('kode_skpd');
+            $rekonRef = DB::table('tabel_rekon')->where('tahun', $tahun)->where('bulan', $bulanStr)->get()->keyBy('kode_skpd');
+            $selisihRef = DB::table('tabel_selisih')->where('tahun', $tahun)->where('bulan', $bulanStr)->get()->keyBy('kode_skpd');
+
             $skpds = DB::table('tabel_skpd')->orderBy('kode_skpd')->get();
 
             foreach ($skpds as $skpd) {
-                $rekon = DB::table('tabel_rekon')
-                    ->where('tahun', $tahun)
-                    ->where('bulan', $bulan)
-                    ->where('kode_skpd', $skpd->kode_skpd)
-                    ->first();
+                $k = $skpd->kode_skpd;
+                $hasRekon = isset($rekonRef[$k]);
 
-                if ($rekon) {
-                    $detail = $this->rekonService->getCetakData($rekon->no_rekon);
-                    
-                    $p = $detail['dataA']['penerimaan'] ?? [];
-                    $q = $detail['dataA']['pengeluaran'] ?? [];
+                // Ambil data agregat jika ada (jika tidak ada set ke 0)
+                $p_ls = (float)($sp2d[$k]->ls ?? 0); $p_up = (float)($sp2d[$k]->up_gu ?? 0); $p_tu = (float)($sp2d[$k]->tu ?? 0); $p_guk = (float)($sp2d[$k]->gukkpd ?? 0);
+                $q_ls = (float)($spj[$k]->spj_ls ?? 0); $q_up = (float)($spj[$k]->spj_up_gu ?? 0); $q_tu = (float)($spj[$k]->spj_tu ?? 0); $q_guk = (float)($spj[$k]->spj_gukkpd ?? 0);
+                $s_up = (float)($sts[$k]->sts_up_gu ?? 0); $s_tu = (float)($sts[$k]->sts_tu ?? 0); $s_cl = (float)($sts[$k]->cp_ls ?? 0); $s_cu = (float)($sts[$k]->cp_up_gu ?? 0); $s_ct = (float)($sts[$k]->cp_tu ?? 0);
 
-                    $total_sp2d = (float)(($p['ls'] ?? 0) + ($p['up_gu'] ?? 0) + ($p['tu'] ?? 0) + ($p['gukkpd'] ?? 0));
-                    $total_spj  = (float)(($q['spj_ls'] ?? 0) + ($q['spj_up_gu'] ?? 0) + ($q['spj_tu'] ?? 0) + ($q['spj_gukkpd'] ?? 0));
-                    $total_sts  = (float)(($q['sts_up_gu'] ?? 0) + ($q['sts_tu'] ?? 0) + ($q['cp_ls'] ?? 0) + ($q['cp_up_gu'] ?? 0) + ($q['cp_tu'] ?? 0));
+                $total_sp2d = $p_ls + $p_up + $p_tu + $p_guk;
+                $total_spj  = $q_ls + $q_up + $q_tu + $q_guk;
+                $total_sts  = $s_up + $s_tu + $s_cl + $s_cu + $s_ct;
 
-                    $dataRealisasi[] = (object) [
-                        'kode_skpd'   => $skpd->kode_skpd,
-                        'nama_skpd'   => $skpd->skpd,
-                        
-                        // SP2D Rinci
-                        'sp2d_ls'     => (float)($p['ls'] ?? 0),
-                        'sp2d_upgu'   => (float)($p['up_gu'] ?? 0),
-                        'sp2d_tu'     => (float)($p['tu'] ?? 0),
-                        'sp2d_gukkpd' => (float)($p['gukkpd'] ?? 0),
-                        'total_sp2d'  => $total_sp2d,
-                        
-                        // SPJ Rinci
-                        'spj_ls'      => (float)($q['spj_ls'] ?? 0),
-                        'spj_upgu'    => (float)($q['spj_up_gu'] ?? 0),
-                        'spj_tu'      => (float)($q['spj_tu'] ?? 0),
-                        'spj_gukkpd'  => (float)($q['spj_gukkpd'] ?? 0),
-                        'total_spj'   => $total_spj,
-                        
-                        // STS Rinci (SEBELUMNYA KETINGGALAN DI SINI)
-                        'sts_up_gu'   => (float)($q['sts_up_gu'] ?? 0),
-                        'sts_tu'      => (float)($q['sts_tu'] ?? 0),
-                        'cp_ls'       => (float)($q['cp_ls'] ?? 0),
-                        'cp_up_gu'    => (float)($q['cp_up_gu'] ?? 0),
-                        'cp_tu'       => (float)($q['cp_tu'] ?? 0),
-                        'total_sts'   => $total_sts,
-                        
-                        // Kas & Selisih
-                        'kas_sipd'    => (float)($detail['tabA']['saldo_kas'] ?? 0),
-                        'kas_bank'    => (float)($detail['totalKasBank'] ?? 0),
-                        'kas_tunai'   => (float)($detail['totalKasTunai'] ?? 0),
-                        'selisih'     => (float)($detail['selisihAC'] ?? 0),
-                    ];
-                } else {
-                    $dataRealisasi[] = (object) [
-                        'kode_skpd' => $skpd->kode_skpd, 'nama_skpd' => $skpd->skpd,
-                        'sp2d_ls' => 0, 'sp2d_upgu' => 0, 'sp2d_tu' => 0, 'sp2d_gukkpd' => 0, 'total_sp2d' => 0,
-                        'spj_ls' => 0, 'spj_upgu' => 0, 'spj_tu' => 0, 'spj_gukkpd' => 0, 'total_spj' => 0,
-                        
-                        // Batalkan nilai kosong untuk rincian STS di sini juga
-                        'sts_up_gu' => 0, 'sts_tu' => 0, 'cp_ls' => 0, 'cp_up_gu' => 0, 'cp_tu' => 0,
-                        'total_sts' => 0, 
-                        
-                        'kas_sipd' => 0, 'kas_bank' => 0, 'kas_tunai' => 0, 'selisih' => 0,
-                    ];
-                }
+                $k_bank  = (float)($kasReal[$k]->bank ?? 0);
+                $k_tunai = (float)($kasReal[$k]->tunai ?? 0);
+                $total_real = $k_bank + $k_tunai;
+
+                // Hitung estimasi saldo kas jika rekon tersedia
+                $saldo_awal = $hasRekon ? $this->rekonService->hitungSaldoAwal($tahun, (int)$bulan, $k) : 0;
+                $kas_sipd   = $hasRekon ? ($saldo_awal + $total_sp2d - $total_spj - $total_sts) : 0;
+                $selisih    = $hasRekon ? ($kas_sipd - $total_real) : 0;
+
+                $dataRealisasi[] = (object) [
+                    'kode_skpd'   => $k,
+                    'nama_skpd'   => $skpd->skpd,
+                    'sp2d_ls'     => $p_ls, 'sp2d_upgu'   => $p_up, 'sp2d_tu'     => $p_tu, 'sp2d_gukkpd' => $p_guk, 'total_sp2d'  => $total_sp2d,
+                    'spj_ls'      => $q_ls, 'spj_upgu'   => $q_up, 'spj_tu'     => $q_tu, 'spj_gukkpd' => $q_guk, 'total_spj'   => $total_spj,
+                    'sts_up_gu'   => $s_up, 'sts_tu'      => $s_tu, 'cp_ls'       => $s_cl, 'cp_up_gu'    => $s_cu, 'cp_tu'       => $s_ct, 'total_sts'   => $total_sts,
+                    'kas_sipd'    => $kas_sipd,
+                    'kas_bank'    => $k_bank,
+                    'kas_tunai'   => $k_tunai,
+                    'selisih'     => $selisih,
+                ];
             }
 
             $collection = collect($dataRealisasi);
@@ -442,34 +423,37 @@ class RekonKasController extends Controller
         ];
 
         if (!empty($bulan)) {
+            $bulanStr = str_pad($bulan, 2, '0', STR_PAD_LEFT);
             $querySkpd = DB::table('tabel_skpd');
             if ($kodeSkpd && $kodeSkpd !== 'all') {
                 $querySkpd->where('kode_skpd', $kodeSkpd);
             }
             $listTampil = $querySkpd->orderBy('kode_skpd')->get();
 
-            // Query Agregat
-            $sp2d = DB::table('tabel_sp2d')->where('tahun', $tahun)->where('bulan', $bulan)->selectRaw("kode_skpd, SUM(nilai_ls + nilai_upgu + nilai_tu + nilai_gukkpd) as total")->groupBy('kode_skpd')->pluck('total', 'kode_skpd');
-            $spj = DB::table('tabel_spj')->where('tahun', $tahun)->where('bulan', $bulan)->selectRaw("kode_skpd, SUM(nilai_ls + nilai_upgu + nilai_tu + nilai_gukkpd) as total")->groupBy('kode_skpd')->pluck('total', 'kode_skpd');
-            $sts = DB::table('tabel_sts')->where('tahun', $tahun)->where('bulan', $bulan)->selectRaw("kode_skpd, SUM(sts_upgu + sts_tu + cp_ls + cp_upgu + cp_tu) as total")->groupBy('kode_skpd')->pluck('total', 'kode_skpd');
-            $kasReal = DB::table('tabel_posisi_kas')->where('tahun', $tahun)->where('bulan', $bulan)->selectRaw("kode_skpd, SUM(kas_di_bank + kas_tunai) as total")->groupBy('kode_skpd')->pluck('total', 'kode_skpd');
+            // Query Agregat massal
+            $sp2d = DB::table('tabel_sp2d')->where('tahun', $tahun)->where('bulan', $bulanStr)->selectRaw("kode_skpd, SUM(nilai_ls + nilai_upgu + nilai_tu + nilai_gukkpd) as total")->groupBy('kode_skpd')->pluck('total', 'kode_skpd');
+            $spj = DB::table('tabel_spj')->where('tahun', $tahun)->where('bulan', $bulanStr)->selectRaw("kode_skpd, SUM(nilai_ls + nilai_upgu + nilai_tu + nilai_gukkpd) as total")->groupBy('kode_skpd')->pluck('total', 'kode_skpd');
+            $sts = DB::table('tabel_sts')->where('tahun', $tahun)->where('bulan', $bulanStr)->selectRaw("kode_skpd, SUM(sts_upgu + sts_tu + cp_ls + cp_upgu + cp_tu) as total")->groupBy('kode_skpd')->pluck('total', 'kode_skpd');
+            $kasReal = DB::table('tabel_posisi_kas')->where('tahun', $tahun)->where('bulan', $bulanStr)->selectRaw("kode_skpd, SUM(kas_di_bank + kas_tunai) as total")->groupBy('kode_skpd')->pluck('total', 'kode_skpd');
 
-            $rekonRef = DB::table('tabel_rekon')->where('tahun', $tahun)->where('bulan', $bulan)->pluck('no_rekon', 'kode_skpd');
-            $selisihKet = DB::table('tabel_selisih')->where('tahun', $tahun)->where('bulan', $bulan)->pluck('keterangan_posisi_kas', 'kode_skpd');
+            $rekonRef = DB::table('tabel_rekon')->where('tahun', $tahun)->where('bulan', $bulanStr)->pluck('no_rekon', 'kode_skpd');
+            $selisihKet = DB::table('tabel_selisih')->where('tahun', $tahun)->where('bulan', $bulanStr)->pluck('keterangan_posisi_kas', 'kode_skpd');
 
+            // Menggunakan pemetaan memori lokal, menghapus fungsi pemicu latensi n+1
             $dataRekap = $listTampil->map(function ($s) use ($tahun, $bulan, $sp2d, $spj, $sts, $kasReal, $rekonRef, $selisihKet) {
-                $saldoAwal = $this->rekonService->hitungSaldoAwal($tahun, (int)$bulan, $s->kode_skpd);
+                $noRekon = $rekonRef[$s->kode_skpd] ?? null;
+                
+                // hitungSaldoAwal dipanggil hanya jika rekon ada
+                $saldoAwal = $noRekon ? $this->rekonService->hitungSaldoAwal($tahun, (int)$bulan, $s->kode_skpd) : 0;
                 $kasSipd   = $saldoAwal + (float)($sp2d[$s->kode_skpd] ?? 0) - (float)($spj[$s->kode_skpd] ?? 0) - (float)($sts[$s->kode_skpd] ?? 0);
                 $totalKasReal = (float)($kasReal[$s->kode_skpd] ?? 0);
                 $selisih      = (float)number_format($kasSipd - $totalKasReal, 2, '.', '');
-                $noRekon      = $rekonRef[$s->kode_skpd] ?? null;
                 
                 $status = 'BELUM';
                 if ($noRekon) {
                     $status = ($selisih == 0 || isset($selisihKet[$s->kode_skpd])) ? 'SUDAH' : 'PROSES';
                 }
 
-                // Ubah ke array biasa agar mulus di-serialize ke JSON oleh Inertia
                 return [
                     'kode_skpd'    => $s->kode_skpd,
                     'skpd'         => $s->skpd,
