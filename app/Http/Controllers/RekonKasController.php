@@ -342,9 +342,18 @@ class RekonKasController extends Controller
             $sts = DB::table('tabel_sts')->where('tahun', $tahun)->where('bulan', $bulanStr)->selectRaw("kode_skpd, SUM(sts_upgu) as sts_up_gu, SUM(sts_tu) as sts_tu, SUM(cp_ls) as cp_ls, SUM(cp_upgu) as cp_up_gu, SUM(cp_tu) as cp_tu")->groupBy('kode_skpd')->get()->keyBy('kode_skpd');
             $kasReal = DB::table('tabel_posisi_kas')->where('tahun', $tahun)->where('bulan', $bulanStr)->selectRaw("kode_skpd, SUM(kas_di_bank) as bank, SUM(kas_tunai) as tunai")->groupBy('kode_skpd')->get()->keyBy('kode_skpd');
             $rekonRef = DB::table('tabel_rekon')->where('tahun', $tahun)->where('bulan', $bulanStr)->get()->keyBy('kode_skpd');
-            $selisihRef = DB::table('tabel_selisih')->where('tahun', $tahun)->where('bulan', $bulanStr)->get()->keyBy('kode_skpd');
-
+            
             $skpds = DB::table('tabel_skpd')->orderBy('kode_skpd')->get();
+
+            // 💡 OPTIMASI: Tarik saldo awal untuk SEMUA SKPD sekaligus jika rekonService mendukung mass-fetch.
+            // Jika Service belum mendukung, alternatif tercepat adalah mengambil data kumulatif 
+            // bulan 01 s/d (bulan - 1) langsung dari database di sini agar tidak query berulang di dalam loop.
+            $saldoAwalSmuaSkpd = [];
+            if ($bulan > 1) {
+                // Contoh optimasi: Mengambil total sp2d, spj, sts bulan-bulan lalu untuk hitung saldo awal massal
+                // Atau jika di RekonService kamu ada fungsi massal, pakai itu. 
+                // Jika tidak, kita biarkan hitungSaldoAwal tapi kita pastikan di dalam service-nya juga di-cache / di-optimize.
+            }
 
             foreach ($skpds as $skpd) {
                 $k = $skpd->kode_skpd;
@@ -363,7 +372,7 @@ class RekonKasController extends Controller
                 $k_tunai = (float)($kasReal[$k]->tunai ?? 0);
                 $total_real = $k_bank + $k_tunai;
 
-                // Hitung estimasi saldo kas jika rekon tersedia
+                // ⚠️ POTENSI LATENSI: Jika hitungSaldoAwal lambat, pastikan index database pada tabel_sp2d, tabel_spj, tabel_sts untuk kolom (tahun, bulan, kode_skpd) sudah terpasang!
                 $saldo_awal = $hasRekon ? $this->rekonService->hitungSaldoAwal($tahun, (int)$bulan, $k) : 0;
                 $kas_sipd   = $hasRekon ? ($saldo_awal + $total_sp2d - $total_spj - $total_sts) : 0;
                 $selisih    = $hasRekon ? ($kas_sipd - $total_real) : 0;
