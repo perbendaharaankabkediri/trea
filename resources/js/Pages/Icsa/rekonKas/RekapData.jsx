@@ -1,14 +1,24 @@
 import React, { useState } from 'react';
-import { Head, router, usePage } from '@inertiajs/react'; // <-- Sudah ditambahkan Head
+import { Head, router } from '@inertiajs/react';
 import AuthenticatedLayout from '@/layouts/AuthenticatedLayout';
+import { Search, FileSpreadsheet } from 'lucide-react';
 
 export default function RekapData({ title, dataRealisasi, grandTotal, bulanNama, filters }) {
     const [selectedBulan, setSelectedBulan] = useState(filters.bulan || '');
 
-    const formatRupiah = (value) => {
-        return new Intl.NumberFormat('id-ID', {
-            minimumFractionDigits: 0
-        }).format(value);
+    const fmt = (value) => {
+        if (!value || value === 0) return null;
+        return new Intl.NumberFormat('id-ID').format(value);
+    };
+
+    const Num = ({ value, bold = false }) => {
+        const str = fmt(value);
+        if (!str) return <span className="text-slate-600">-</span>;
+        return (
+            <span className={`tabular-nums ${bold ? 'font-medium text-slate-200' : 'text-slate-400'}`}>
+                {str}
+            </span>
+        );
     };
 
     const handleFilterSubmit = (e) => {
@@ -18,159 +28,220 @@ export default function RekapData({ title, dataRealisasi, grandTotal, bulanNama,
 
     return (
         <AuthenticatedLayout header={<span>{title}</span>}>
-            {/* Menyisipkan judul ke tab browser di sebelah favicon */}
             <Head title={title} />
 
-            {/* FILTER CARD */}
-            <div className="bg-white rounded-lg shadow-sm mb-6 border border-gray-100">
-                <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-                    <h5 className="font-semibold text-primary flex items-center gap-2">
-                        <span>📁</span> Filter Periode
-                    </h5>
-                    {selectedBulan && bulanNama[selectedBulan] && (
-                        <span className="bg-blue-50 text-blue-600 px-3 py-1 rounded text-sm font-medium">
-                            Periode: {bulanNama[selectedBulan]}
-                        </span>
-                    )}
+            {/* ─── TOOLBAR ─── */}
+            <div className="bg-[#0d1424] border border-white/[0.07] rounded-xl px-4 py-3.5 mb-4 flex items-end gap-3 flex-wrap">
+                <div className="flex flex-col gap-1.5">
+                    <label className="text-[10.5px] font-semibold text-slate-600 uppercase tracking-wide">
+                        Bulan Periode
+                    </label>
+                    <select
+                        value={selectedBulan}
+                        onChange={(e) => setSelectedBulan(e.target.value)}
+                        required
+                        className="h-[34px] bg-white/[0.03] border border-white/[0.08] rounded-lg px-3 text-[12px] text-slate-300 outline-none focus:border-blue-500/40 transition-colors min-w-[160px]"
+                        style={{ colorScheme: 'dark' }}
+                    >
+                        <option value="" className="bg-[#0d1424]">-- Pilih Bulan --</option>
+                        {Object.entries(bulanNama).map(([key, name]) => (
+                            <option key={key} value={key} className="bg-[#0d1424]">{name}</option>
+                        ))}
+                    </select>
                 </div>
-                <div className="p-6">
-                    <form onSubmit={handleFilterSubmit} className="flex items-end gap-4">
-                        <div className="w-full max-w-xs">
-                            <label className="block text-xs font-bold text-gray-700 mb-1">Bulan</label>
-                            <select
-                                value={selectedBulan}
-                                onChange={(e) => setSelectedBulan(e.target.value)}
-                                className="w-full border-gray-300 rounded shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm"
-                                required
-                            >
-                                <option value="">-- Pilih Bulan --</option>
-                                {Object.entries(bulanNama).map(([key, name]) => (
-                                    <option key={key} value={key}>{name}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm shadow-sm transition-colors">
-                            🔍 Tampilkan
-                        </button>
 
-                        {filters.bulan && (
-                            <a
-                                href={route('icsa.rekapdata.export', { bulan: filters.bulan })}
-                                className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded text-sm shadow-sm transition-colors ml-auto flex items-center gap-2"
-                            >
-                                📄 Export Excel
-                            </a>
-                        )}
-                    </form>
-                </div>
+                <button
+                    onClick={handleFilterSubmit}
+                    className="h-[34px] flex items-center gap-1.5 px-4 rounded-lg bg-blue-600 hover:bg-blue-700 text-[12px] font-semibold text-white transition-colors"
+                >
+                    <Search size={13} />
+                    Tampilkan
+                </button>
+
+                {filters.bulan && (
+                    <>
+                        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-500/[0.08] border border-blue-500/[0.15] ml-1">
+                            <span className="w-[5px] h-[5px] rounded-full bg-emerald-400 flex-shrink-0" />
+                            <span className="text-[10.5px] font-semibold text-blue-400 tracking-wide">
+                                Periode: {bulanNama[filters.bulan]}
+                            </span>
+                        </div>
+
+                        <a
+                            href={route('icsa.rekapdata.export', { bulan: filters.bulan })}
+                            className="h-[34px] flex items-center gap-1.5 px-4 rounded-lg bg-emerald-600/10 border border-emerald-500/20 hover:bg-emerald-600/20 text-[12px] font-medium text-emerald-400 transition-colors ml-auto"
+                        >
+                            <FileSpreadsheet size={13} />
+                            Export Excel
+                        </a>
+                    </>
+                )}
             </div>
 
-            {/* MATRIX TABLE CARD */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
+            {/* ─── TABLE CARD ─── */}
+            <div className="bg-[#0d1424] border border-white/[0.07] rounded-xl overflow-hidden">
+
+                {/* Meta row */}
                 {filters.bulan && dataRealisasi.length > 0 && (
-                    <div className="px-6 py-3 border-b border-gray-100 flex justify-between items-center text-xs text-gray-500 bg-gray-50">
-                        <div>Menampilkan <strong>{dataRealisasi.length}</strong> SKPD</div>
-                        <div className="flex gap-3">
-                            <span className="flex items-center gap-1"><span className="text-blue-500">■</span> SP2D</span>
-                            <span className="flex items-center gap-1"><span className="text-emerald-500">■</span> SPJ</span>
-                            <span className="flex items-center gap-1"><span className="text-amber-500">■</span> STS</span>
-                            <span className="flex items-center gap-1"><span className="text-purple-500">■</span> Posisi Kas</span>
+                    <div className="px-4 py-2.5 border-b border-white/[0.05] flex items-center gap-4 text-[11px] text-slate-600">
+                        <span>
+                            <span className="text-slate-300 font-medium">{dataRealisasi.length}</span> SKPD
+                        </span>
+                        <div className="flex items-center gap-3 ml-2">
+                            {[
+                                { color: '#3b82f6', label: 'SP2D' },
+                                { color: '#10b981', label: 'SPJ' },
+                                { color: '#f59e0b', label: 'STS' },
+                                { color: '#8b5cf6', label: 'Posisi Kas' },
+                            ].map(({ color, label }) => (
+                                <span key={label} className="flex items-center gap-1">
+                                    <span className="w-2 h-2 rounded-sm inline-block" style={{ background: color }} />
+                                    {label}
+                                </span>
+                            ))}
                         </div>
                     </div>
                 )}
 
-                <div className="overflow-auto max-h-[650px] custom-table-scroll">
-                    <table className="w-full text-left border-collapse text-xs">
+                <div className="overflow-auto max-h-[calc(100vh-260px)]">
+                    <table className="w-full border-collapse text-[11.5px]" style={{ minWidth: '1400px' }}>
                         <thead>
-                            <tr className="bg-gray-800 text-white text-center uppercase tracking-wider font-semibold sticky top-0 z-30">
-                                <th rowSpan={2} className="p-3 border border-gray-700 bg-gray-800 sticky left-0 z-40 min-w-[45px] w-[45px]">No</th>
-                                <th rowSpan={2} className="p-3 border border-gray-700 bg-gray-800 text-left sticky left-[45px] z-40 min-w-[240px] max-w-[240px]">Satuan Kerja (SKPD)</th>
-                                <th colSpan={5} className="p-2 border border-gray-700 bg-blue-900 text-blue-100" style={{ borderTop: '3px solid #3b82f6' }}>Realisasi SP2D</th>
-                                <th colSpan={5} className="p-2 border border-gray-700 bg-emerald-900 text-emerald-100" style={{ borderTop: '3px solid #10b981' }}>Total SPJ</th>
-                                <th colSpan={1} className="p-2 border border-gray-700 bg-amber-900 text-amber-100" style={{ borderTop: '3px solid #f59e0b' }}>STS</th>
-                                <th colSpan={4} className="p-2 border border-gray-700 bg-purple-900 text-purple-100" style={{ borderTop: '3px solid #8b5cf6' }}>Posisi Kas & Selisih</th>
+                            {/* Group row */}
+                            <tr className="bg-[#080d1a]">
+                                <th rowSpan={2} className="px-3 py-2 text-center text-[10px] font-medium text-slate-600 border-b border-white/[0.05] sticky left-0 z-30 bg-[#080d1a] w-[36px]">
+                                    No
+                                </th>
+                                <th rowSpan={2} className="px-3 py-2 text-left text-[10px] font-medium text-slate-600 border-b border-r border-white/[0.08] sticky left-[36px] z-30 bg-[#080d1a] min-w-[220px]">
+                                    Satuan Kerja (SKPD)
+                                </th>
+                                {[
+                                    { label: 'Realisasi SP2D', color: '#3b82f6', span: 5 },
+                                    { label: 'Total SPJ', color: '#10b981', span: 5 },
+                                    { label: 'STS', color: '#f59e0b', span: 1 },
+                                    { label: 'Posisi Kas & Selisih', color: '#8b5cf6', span: 4 },
+                                ].map(({ label, color, span }) => (
+                                    <th
+                                        key={label}
+                                        colSpan={span}
+                                        className="px-3 py-2 text-center text-[10px] font-semibold border-b border-white/[0.05] border-l border-white/[0.04]"
+                                        style={{ borderTop: `2px solid ${color}`, color }}
+                                    >
+                                        {label}
+                                    </th>
+                                ))}
                             </tr>
-                            <tr className="bg-gray-100 text-gray-700 text-center font-bold sticky top-[37px] z-30">
-                                <th className="p-2 border border-gray-200 bg-blue-50 text-blue-700">LS</th>
-                                <th className="p-2 border border-gray-200 bg-blue-50 text-blue-700">UP/GU</th>
-                                <th className="p-2 border border-gray-200 bg-blue-50 text-blue-700">TU</th>
-                                <th className="p-2 border border-gray-200 bg-blue-50 text-blue-700">KKPD</th>
-                                <th className="p-2 border border-gray-200 bg-blue-100 text-blue-900">TOTAL</th>
-                                <th className="p-2 border border-gray-200 bg-emerald-50 text-emerald-700">LS</th>
-                                <th className="p-2 border border-gray-200 bg-emerald-50 text-emerald-700">UP/GU</th>
-                                <th className="p-2 border border-gray-200 bg-emerald-50 text-emerald-700">TU</th>
-                                <th className="p-2 border border-gray-200 bg-emerald-50 text-emerald-700">KKPD</th>
-                                <th className="p-2 border border-gray-200 bg-emerald-100 text-emerald-900">TOTAL</th>
-                                <th className="p-2 border border-gray-200 bg-amber-100 text-amber-900">TOTAL</th>
-                                <th className="p-2 border border-gray-200 bg-purple-50 text-purple-700">KAS SIPD</th>
-                                <th className="p-2 border border-gray-200 bg-purple-50 text-purple-700">KAS BANK</th>
-                                <th className="p-2 border border-gray-200 bg-purple-50 text-purple-700">KAS TUNAI</th>
-                                <th className="p-2 border border-purple-900 bg-purple-900 text-white font-black">SELISIH</th>
+                            {/* Sub-column row */}
+                            <tr className="bg-[#0a0f1e]">
+                                {['LS','UP/GU','TU','KKPD','Total','LS','UP/GU','TU','KKPD','Total','Total','Kas SIPD','Kas Bank','Kas Tunai','Selisih'].map((col, i) => (
+                                    <th
+                                        key={i}
+                                        className={`px-3 py-2 text-right text-[10px] font-medium text-slate-500 border-b border-white/[0.05] whitespace-nowrap ${
+                                            [4,5,10,11,15].includes(i) ? 'border-l border-white/[0.07] text-slate-400' : ''
+                                        } ${[4,10].includes(i) ? 'font-semibold' : ''}`}
+                                    >
+                                        {col}
+                                    </th>
+                                ))}
                             </tr>
                         </thead>
 
-                        <tbody className="divide-y divide-gray-200 font-mono">
+                        <tbody>
                             {dataRealisasi.length > 0 ? (
-                                dataRealisasi.map((row, index) => (
-                                    <tr key={index} className="hover:bg-gray-50 group">
-                                        <td className="p-2 text-center sticky left-0 z-20 bg-white group-hover:bg-gray-50 border-r border-gray-200 text-gray-400 font-sans">
-                                            {index + 1}
-                                        </td>
-                                        <td className="p-2 sticky left-[45px] z-20 bg-white group-hover:bg-gray-50 border-r-2 border-gray-300 font-sans min-w-[240px] max-w-[240px] truncate">
-                                            <span className="block text-[10px] text-gray-400 font-medium">{row.kode_skpd}</span>
-                                            <span className="block font-semibold text-gray-700 leading-tight whitespace-normal">{row.nama_skpd}</span>
-                                        </td>
-                                        <td className="p-2 text-right border-r border-gray-200">{formatRupiah(row.sp2d_ls)}</td>
-                                        <td className="p-2 text-right border-r border-gray-200">{formatRupiah(row.sp2d_upgu)}</td>
-                                        <td className="p-2 text-right border-r border-gray-200">{formatRupiah(row.sp2d_tu)}</td>
-                                        <td className="p-2 text-right border-r border-gray-200">{formatRupiah(row.sp2d_gukkpd)}</td>
-                                        <td className="p-2 text-right border-r border-gray-200 font-bold bg-blue-50/50">{formatRupiah(row.total_sp2d)}</td>
-                                        <td className="p-2 text-right border-r border-gray-200">{formatRupiah(row.spj_ls)}</td>
-                                        <td className="p-2 text-right border-r border-gray-200">{formatRupiah(row.spj_upgu)}</td>
-                                        <td className="p-2 text-right border-r border-gray-200">{formatRupiah(row.spj_tu)}</td>
-                                        <td className="p-2 text-right border-r border-gray-200">{formatRupiah(row.spj_gukkpd)}</td>
-                                        <td className="p-2 text-right border-r border-gray-200 font-bold bg-emerald-50/50">{formatRupiah(row.total_spj)}</td>
-                                        <td className="p-2 text-right border-r border-gray-200 font-bold bg-amber-50/50">{formatRupiah(row.total_sts)}</td>
-                                        <td className="p-2 text-right border-r border-gray-200 text-blue-600">{formatRupiah(row.kas_sipd)}</td>
-                                        <td className="p-2 text-right border-r border-gray-200">{formatRupiah(row.kas_bank)}</td>
-                                        <td className="p-2 text-right border-r border-gray-200">{formatRupiah(row.kas_tunai)}</td>
-                                        <td className={`p-2 text-right font-bold ${row.selisih !== 0 ? 'text-red-600 bg-red-50' : 'text-emerald-600'}`}>
-                                            {row.selisih !== 0 ? formatRupiah(row.selisih) : '✓'}
-                                        </td>
-                                    </tr>
-                                ))
+                                dataRealisasi.map((row, index) => {
+                                    const totalSp2d = (row.sp2d_ls || 0) + (row.sp2d_upgu || 0) + (row.sp2d_tu || 0) + (row.sp2d_gukkpd || 0);
+                                    const totalSpj  = (row.spj_ls  || 0) + (row.spj_upgu  || 0) + (row.spj_tu  || 0) + (row.spj_gukkpd  || 0);
+                                    const selisih   = row.selisih ?? 0;
+
+                                    return (
+                                        <tr
+                                            key={index}
+                                            className="border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors group"
+                                        >
+                                            {/* No */}
+                                            <td className="px-3 py-2 text-center text-[10.5px] text-slate-600 sticky left-0 bg-[#0d1424] group-hover:bg-[#111827] z-10 w-[36px]">
+                                                {index + 1}
+                                            </td>
+                                            {/* SKPD */}
+                                            <td className="px-3 py-2 sticky left-[36px] bg-[#0d1424] group-hover:bg-[#111827] z-10 border-r border-white/[0.06] min-w-[220px]">
+                                                <span className="block text-[10px] text-slate-700">{row.kode_skpd}</span>
+                                                <span className="block text-[12px] font-medium text-slate-300 leading-tight">{row.nama_skpd}</span>
+                                            </td>
+                                            {/* SP2D */}
+                                            <td className="px-3 py-2 text-right border-l border-white/[0.04]"><Num value={row.sp2d_ls} /></td>
+                                            <td className="px-3 py-2 text-right"><Num value={row.sp2d_upgu} /></td>
+                                            <td className="px-3 py-2 text-right"><Num value={row.sp2d_tu} /></td>
+                                            <td className="px-3 py-2 text-right"><Num value={row.sp2d_gukkpd} /></td>
+                                            <td className="px-3 py-2 text-right border-l border-white/[0.07]"><Num value={totalSp2d} bold /></td>
+                                            {/* SPJ */}
+                                            <td className="px-3 py-2 text-right border-l border-white/[0.07]"><Num value={row.spj_ls} /></td>
+                                            <td className="px-3 py-2 text-right"><Num value={row.spj_upgu} /></td>
+                                            <td className="px-3 py-2 text-right"><Num value={row.spj_tu} /></td>
+                                            <td className="px-3 py-2 text-right"><Num value={row.spj_gukkpd} /></td>
+                                            <td className="px-3 py-2 text-right border-l border-white/[0.07]"><Num value={totalSpj} bold /></td>
+                                            {/* STS */}
+                                            <td className="px-3 py-2 text-right border-l border-white/[0.07]"><Num value={row.total_sts} bold /></td>
+                                            {/* Posisi Kas */}
+                                            <td className="px-3 py-2 text-right border-l border-white/[0.07]"><Num value={row.kas_sipd} /></td>
+                                            <td className="px-3 py-2 text-right"><Num value={row.kas_bank} /></td>
+                                            <td className="px-3 py-2 text-right"><Num value={row.kas_tunai} /></td>
+                                            {/* Selisih */}
+                                            <td className={`px-3 py-2 text-right font-medium border-l border-white/[0.07] ${
+                                                selisih !== 0 ? 'text-red-400' : 'text-emerald-500'
+                                            }`}>
+                                                {selisih !== 0
+                                                    ? new Intl.NumberFormat('id-ID').format(selisih)
+                                                    : '✓'}
+                                            </td>
+                                        </tr>
+                                    );
+                                })
                             ) : (
                                 <tr>
-                                    <td colSpan={16} className="text-center py-16 text-gray-400 font-sans">
-                                        <div className="text-2xl mb-2">🔍</div>
-                                        {selectedBulan ? 'Tidak ada data rekonsiliasi untuk bulan ini.' : 'Silakan pilih bulan periode untuk menampilkan data.'}
+                                    <td colSpan={17} className="py-16 text-center text-[12px] text-slate-700">
+                                        {selectedBulan
+                                            ? 'Tidak ada data rekonsiliasi untuk bulan ini.'
+                                            : 'Silakan pilih bulan periode untuk menampilkan data.'}
                                     </td>
                                 </tr>
                             )}
                         </tbody>
 
+                        {/* Grand Total */}
                         {dataRealisasi.length > 0 && grandTotal && (
-                            <tfoot className="sticky bottom-0 z-30 font-bold text-white bg-gray-800">
-                                <tr>
-                                    <td colSpan={2} className="p-3 text-center sticky left-0 z-40 bg-gray-900 border-r-2 border-gray-700 tracking-wider font-sans">
-                                        GRAND TOTAL
+                            <tfoot>
+                                <tr className="border-t border-white/[0.1] bg-[#080d1a] sticky bottom-0 z-20">
+                                    <td
+                                        colSpan={2}
+                                        className="px-3 py-2.5 text-center text-[11px] font-semibold text-slate-400 tracking-wider sticky left-0 bg-[#080d1a] z-30 border-r border-white/[0.07]"
+                                        style={{ left: 0 }}
+                                    >
+                                        Grand Total
                                     </td>
-                                    <td className="p-2 text-right text-gray-400 border-r border-gray-700">-</td>
-                                    <td className="p-2 text-right text-gray-400 border-r border-gray-700">-</td>
-                                    <td className="p-2 text-right text-gray-400 border-r border-gray-700">-</td>
-                                    <td className="p-2 text-right text-gray-400 border-r border-gray-700">-</td>
-                                    <td className="p-2 text-right bg-blue-900 text-blue-100 border-r border-gray-700">{formatRupiah(grandTotal.total_sp2d)}</td>
-                                    <td className="p-2 text-right text-gray-400 border-r border-gray-700">-</td>
-                                    <td className="p-2 text-right text-gray-400 border-r border-gray-700">-</td>
-                                    <td className="p-2 text-right text-gray-400 border-r border-gray-700">-</td>
-                                    <td className="p-2 text-right text-gray-400 border-r border-gray-700">-</td>
-                                    <td className="p-2 text-right bg-emerald-900 text-emerald-100 border-r border-gray-700">{formatRupiah(grandTotal.total_spj)}</td>
-                                    <td className="p-2 text-right bg-amber-950 text-amber-100 border-r border-gray-700">{formatRupiah(grandTotal.total_sts)}</td>
-                                    <td className="p-2 text-right text-blue-300 border-r border-gray-700">{formatRupiah(grandTotal.kas_sipd)}</td>
-                                    <td className="p-2 text-right border-r border-gray-700">{formatRupiah(grandTotal.kas_bank)}</td>
-                                    <td className="p-2 text-right border-r border-gray-700">{formatRupiah(grandTotal.kas_tunai)}</td>
-                                    <td className={`p-2 text-right border-l border-gray-700 ${grandTotal.selisih !== 0 ? 'text-amber-400 bg-red-950' : 'text-emerald-400'}`}>
-                                        {grandTotal.selisih !== 0 ? formatRupiah(grandTotal.selisih) : '✓ Balance'}
+                                    {/* SP2D cols */}
+                                    {[null,null,null,null].map((_,i) => (
+                                        <td key={i} className="px-3 py-2.5 text-right text-slate-600 border-l border-white/[0.04] text-[10.5px]">-</td>
+                                    ))}
+                                    <td className="px-3 py-2.5 text-right font-semibold text-slate-200 border-l border-white/[0.07] tabular-nums">
+                                        {fmt(grandTotal.total_sp2d)}
+                                    </td>
+                                    {[null,null,null,null].map((_,i) => (
+                                        <td key={i} className={`px-3 py-2.5 text-right text-slate-600 text-[10.5px] ${i===0?'border-l border-white/[0.07]':''}`}>-</td>
+                                    ))}
+                                    <td className="px-3 py-2.5 text-right font-semibold text-slate-200 border-l border-white/[0.07] tabular-nums">
+                                        {fmt(grandTotal.total_spj)}
+                                    </td>
+                                    <td className="px-3 py-2.5 text-right font-semibold text-slate-200 border-l border-white/[0.07] tabular-nums">
+                                        {fmt(grandTotal.total_sts)}
+                                    </td>
+                                    <td className="px-3 py-2.5 text-right text-slate-400 border-l border-white/[0.07] tabular-nums">{fmt(grandTotal.kas_sipd)}</td>
+                                    <td className="px-3 py-2.5 text-right text-slate-400 tabular-nums">{fmt(grandTotal.kas_bank)}</td>
+                                    <td className="px-3 py-2.5 text-right text-slate-400 tabular-nums">{fmt(grandTotal.kas_tunai)}</td>
+                                    <td className={`px-3 py-2.5 text-right font-semibold border-l border-white/[0.07] tabular-nums ${
+                                        grandTotal.selisih !== 0 ? 'text-red-400' : 'text-emerald-400'
+                                    }`}>
+                                        {grandTotal.selisih !== 0
+                                            ? new Intl.NumberFormat('id-ID').format(grandTotal.selisih)
+                                            : '✓ Balance'}
                                     </td>
                                 </tr>
                             </tfoot>
