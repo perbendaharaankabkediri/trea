@@ -423,34 +423,37 @@ class RekonKasController extends Controller
         ];
 
         if (!empty($bulan)) {
+            $bulanStr = str_pad($bulan, 2, '0', STR_PAD_LEFT);
             $querySkpd = DB::table('tabel_skpd');
             if ($kodeSkpd && $kodeSkpd !== 'all') {
                 $querySkpd->where('kode_skpd', $kodeSkpd);
             }
             $listTampil = $querySkpd->orderBy('kode_skpd')->get();
 
-            // Query Agregat
-            $sp2d = DB::table('tabel_sp2d')->where('tahun', $tahun)->where('bulan', $bulan)->selectRaw("kode_skpd, SUM(nilai_ls + nilai_upgu + nilai_tu + nilai_gukkpd) as total")->groupBy('kode_skpd')->pluck('total', 'kode_skpd');
-            $spj = DB::table('tabel_spj')->where('tahun', $tahun)->where('bulan', $bulan)->selectRaw("kode_skpd, SUM(nilai_ls + nilai_upgu + nilai_tu + nilai_gukkpd) as total")->groupBy('kode_skpd')->pluck('total', 'kode_skpd');
-            $sts = DB::table('tabel_sts')->where('tahun', $tahun)->where('bulan', $bulan)->selectRaw("kode_skpd, SUM(sts_upgu + sts_tu + cp_ls + cp_upgu + cp_tu) as total")->groupBy('kode_skpd')->pluck('total', 'kode_skpd');
-            $kasReal = DB::table('tabel_posisi_kas')->where('tahun', $tahun)->where('bulan', $bulan)->selectRaw("kode_skpd, SUM(kas_di_bank + kas_tunai) as total")->groupBy('kode_skpd')->pluck('total', 'kode_skpd');
+            // Query Agregat massal
+            $sp2d = DB::table('tabel_sp2d')->where('tahun', $tahun)->where('bulan', $bulanStr)->selectRaw("kode_skpd, SUM(nilai_ls + nilai_upgu + nilai_tu + nilai_gukkpd) as total")->groupBy('kode_skpd')->pluck('total', 'kode_skpd');
+            $spj = DB::table('tabel_spj')->where('tahun', $tahun)->where('bulan', $bulanStr)->selectRaw("kode_skpd, SUM(nilai_ls + nilai_upgu + nilai_tu + nilai_gukkpd) as total")->groupBy('kode_skpd')->pluck('total', 'kode_skpd');
+            $sts = DB::table('tabel_sts')->where('tahun', $tahun)->where('bulan', $bulanStr)->selectRaw("kode_skpd, SUM(sts_upgu + sts_tu + cp_ls + cp_upgu + cp_tu) as total")->groupBy('kode_skpd')->pluck('total', 'kode_skpd');
+            $kasReal = DB::table('tabel_posisi_kas')->where('tahun', $tahun)->where('bulan', $bulanStr)->selectRaw("kode_skpd, SUM(kas_di_bank + kas_tunai) as total")->groupBy('kode_skpd')->pluck('total', 'kode_skpd');
 
-            $rekonRef = DB::table('tabel_rekon')->where('tahun', $tahun)->where('bulan', $bulan)->pluck('no_rekon', 'kode_skpd');
-            $selisihKet = DB::table('tabel_selisih')->where('tahun', $tahun)->where('bulan', $bulan)->pluck('keterangan_posisi_kas', 'kode_skpd');
+            $rekonRef = DB::table('tabel_rekon')->where('tahun', $tahun)->where('bulan', $bulanStr)->pluck('no_rekon', 'kode_skpd');
+            $selisihKet = DB::table('tabel_selisih')->where('tahun', $tahun)->where('bulan', $bulanStr)->pluck('keterangan_posisi_kas', 'kode_skpd');
 
+            // Menggunakan pemetaan memori lokal, menghapus fungsi pemicu latensi n+1
             $dataRekap = $listTampil->map(function ($s) use ($tahun, $bulan, $sp2d, $spj, $sts, $kasReal, $rekonRef, $selisihKet) {
-                $saldoAwal = $this->rekonService->hitungSaldoAwal($tahun, (int)$bulan, $s->kode_skpd);
+                $noRekon = $rekonRef[$s->kode_skpd] ?? null;
+                
+                // hitungSaldoAwal dipanggil hanya jika rekon ada
+                $saldoAwal = $noRekon ? $this->rekonService->hitungSaldoAwal($tahun, (int)$bulan, $s->kode_skpd) : 0;
                 $kasSipd   = $saldoAwal + (float)($sp2d[$s->kode_skpd] ?? 0) - (float)($spj[$s->kode_skpd] ?? 0) - (float)($sts[$s->kode_skpd] ?? 0);
                 $totalKasReal = (float)($kasReal[$s->kode_skpd] ?? 0);
                 $selisih      = (float)number_format($kasSipd - $totalKasReal, 2, '.', '');
-                $noRekon      = $rekonRef[$s->kode_skpd] ?? null;
                 
                 $status = 'BELUM';
                 if ($noRekon) {
                     $status = ($selisih == 0 || isset($selisihKet[$s->kode_skpd])) ? 'SUDAH' : 'PROSES';
                 }
 
-                // Ubah ke array biasa agar mulus di-serialize ke JSON oleh Inertia
                 return [
                     'kode_skpd'    => $s->kode_skpd,
                     'skpd'         => $s->skpd,
