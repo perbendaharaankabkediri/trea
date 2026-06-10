@@ -551,4 +551,63 @@ class RekonService
             ]
         ];
     }
+
+    /**
+     * Hitung Saldo Awal untuk SEMUA SKPD sekaligus (Bebas Rekursif / Anti Lemot)
+     * Khusus digunakan pada halaman Rekap / Monitoring Dashboard
+     */
+    public function hitungSaldoAwalMassal($tahun, $bulan)
+    {
+        $bulanInt = (int) $bulan;
+        $saldoAwalSkpd = [];
+
+        // Jika bulan Januari, semua SKPD saldo awalnya otomatis 0
+        if ($bulanInt === 1) {
+            return $saldoAwalSkpd; 
+        }
+
+        // List bulan-bulan sebelumnya yang harus diakumulasikan (contoh: jika bulan 4, berarti bulan '01','02','03')
+        $listBulanLalu = [];
+        for ($i = 1; $i < $bulanInt; $i++) {
+            $listBulanLalu[] = str_pad($i, 2, '0', STR_PAD_LEFT);
+        }
+
+        // ⚡ AMBIL SUMMARY PENERIMAAN (SP2D) BULAN-BULAN LALU
+        $sp2d = DB::table('tabel_sp2d')
+            ->where('tahun', $tahun)
+            ->whereIn('bulan', $listBulanLalu)
+            ->selectRaw("kode_skpd, SUM(nilai_ls + nilai_upgu + nilai_tu + nilai_gukkpd) as total")
+            ->groupBy('kode_skpd')
+            ->pluck('total', 'kode_skpd');
+
+        // ⚡ AMBIL SUMMARY PENGELUARAN (SPJ) BULAN-BULAN LALU
+        $spj = DB::table('tabel_spj')
+            ->where('tahun', $tahun)
+            ->whereIn('bulan', $listBulanLalu)
+            ->selectRaw("kode_skpd, SUM(nilai_ls + nilai_upgu + nilai_tu + nilai_gukkpd) as total")
+            ->groupBy('kode_skpd')
+            ->pluck('total', 'kode_skpd');
+
+        // ⚡ AMBIL SUMMARY PENGELUARAN (STS) BULAN-BULAN LALU
+        $sts = DB::table('tabel_sts')
+            ->where('tahun', $tahun)
+            ->whereIn('bulan', $listBulanLalu)
+            ->selectRaw("kode_skpd, SUM(sts_upgu + sts_tu + cp_ls + cp_upgu + cp_tu) as total")
+            ->groupBy('kode_skpd')
+            ->pluck('total', 'kode_skpd');
+
+        // Ambil daftar SKPD untuk mapping awal
+        $skpds = DB::table('tabel_skpd')->pluck('kode_skpd');
+
+        foreach ($skpds as $k) {
+            $penerimaanLalu = (float)($sp2d[$k] ?? 0);
+            $pengeluaranSpjLalu = (float)($spj[$k] ?? 0);
+            $pengeluaranStsLalu = (float)($sts[$k] ?? 0);
+
+            // Rumus Saldo Awal Bulan Ini = Total Penerimaan Lalu - Total Pengeluaran Lalu (SPJ + STS)
+            $saldoAwalSkpd[$k] = $penerimaanLalu - ($pengeluaranSpjLalu + $pengeluaranStsLalu);
+        }
+
+        return $saldoAwalSkpd;
+    }
 }

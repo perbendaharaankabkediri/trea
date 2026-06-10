@@ -336,30 +336,22 @@ class RekonKasController extends Controller
         if ($bulan) {
             $bulanStr = str_pad($bulan, 2, '0', STR_PAD_LEFT);
 
-            // ⚡ Tarik summary SP2D, SPJ, STS, dan Kas untuk SEMUA SKPD dalam 1 kali query gabungan
+            // Tarik summary data gabungan untuk menghemat load
             $sp2d = DB::table('tabel_sp2d')->where('tahun', $tahun)->where('bulan', $bulanStr)->selectRaw("kode_skpd, SUM(nilai_ls) as ls, SUM(nilai_upgu) as up_gu, SUM(nilai_tu) as tu, SUM(nilai_gukkpd) as gukkpd")->groupBy('kode_skpd')->get()->keyBy('kode_skpd');
             $spj = DB::table('tabel_spj')->where('tahun', $tahun)->where('bulan', $bulanStr)->selectRaw("kode_skpd, SUM(nilai_ls) as spj_ls, SUM(nilai_upgu) as spj_up_gu, SUM(nilai_tu) as spj_tu, SUM(nilai_gukkpd) as spj_gukkpd")->groupBy('kode_skpd')->get()->keyBy('kode_skpd');
             $sts = DB::table('tabel_sts')->where('tahun', $tahun)->where('bulan', $bulanStr)->selectRaw("kode_skpd, SUM(sts_upgu) as sts_up_gu, SUM(sts_tu) as sts_tu, SUM(cp_ls) as cp_ls, SUM(cp_upgu) as cp_up_gu, SUM(cp_tu) as cp_tu")->groupBy('kode_skpd')->get()->keyBy('kode_skpd');
             $kasReal = DB::table('tabel_posisi_kas')->where('tahun', $tahun)->where('bulan', $bulanStr)->selectRaw("kode_skpd, SUM(kas_di_bank) as bank, SUM(kas_tunai) as tunai")->groupBy('kode_skpd')->get()->keyBy('kode_skpd');
             $rekonRef = DB::table('tabel_rekon')->where('tahun', $tahun)->where('bulan', $bulanStr)->get()->keyBy('kode_skpd');
-            
-            $skpds = DB::table('tabel_skpd')->orderBy('kode_skpd')->get();
 
-            // 💡 OPTIMASI: Tarik saldo awal untuk SEMUA SKPD sekaligus jika rekonService mendukung mass-fetch.
-            // Jika Service belum mendukung, alternatif tercepat adalah mengambil data kumulatif 
-            // bulan 01 s/d (bulan - 1) langsung dari database di sini agar tidak query berulang di dalam loop.
-            $saldoAwalSmuaSkpd = [];
-            if ($bulan > 1) {
-                // Contoh optimasi: Mengambil total sp2d, spj, sts bulan-bulan lalu untuk hitung saldo awal massal
-                // Atau jika di RekonService kamu ada fungsi massal, pakai itu. 
-                // Jika tidak, kita biarkan hitungSaldoAwal tapi kita pastikan di dalam service-nya juga di-cache / di-optimize.
-            }
+            // 💡 OPTIMASI: Panggil kalkulasi saldo awal massal ke Service (Hanya 1x query di luar loop)
+            $saldoAwalMassal = $this->rekonService->hitungSaldoAwalMassal($tahun, $bulan);
+
+            $skpds = DB::table('tabel_skpd')->orderBy('kode_skpd')->get();
 
             foreach ($skpds as $skpd) {
                 $k = $skpd->kode_skpd;
                 $hasRekon = isset($rekonRef[$k]);
 
-                // Ambil data agregat jika ada (jika tidak ada set ke 0)
                 $p_ls = (float)($sp2d[$k]->ls ?? 0); $p_up = (float)($sp2d[$k]->up_gu ?? 0); $p_tu = (float)($sp2d[$k]->tu ?? 0); $p_guk = (float)($sp2d[$k]->gukkpd ?? 0);
                 $q_ls = (float)($spj[$k]->spj_ls ?? 0); $q_up = (float)($spj[$k]->spj_up_gu ?? 0); $q_tu = (float)($spj[$k]->spj_tu ?? 0); $q_guk = (float)($spj[$k]->spj_gukkpd ?? 0);
                 $s_up = (float)($sts[$k]->sts_up_gu ?? 0); $s_tu = (float)($sts[$k]->sts_tu ?? 0); $s_cl = (float)($sts[$k]->cp_ls ?? 0); $s_cu = (float)($sts[$k]->cp_up_gu ?? 0); $s_ct = (float)($sts[$k]->cp_tu ?? 0);
@@ -372,8 +364,8 @@ class RekonKasController extends Controller
                 $k_tunai = (float)($kasReal[$k]->tunai ?? 0);
                 $total_real = $k_bank + $k_tunai;
 
-                // ⚠️ POTENSI LATENSI: Jika hitungSaldoAwal lambat, pastikan index database pada tabel_sp2d, tabel_spj, tabel_sts untuk kolom (tahun, bulan, kode_skpd) sudah terpasang!
-                $saldo_awal = $hasRekon ? $this->rekonService->hitungSaldoAwal($tahun, (int)$bulan, $k) : 0;
+                // 💡 OPTIMASI: Mengambil data dari memori array hasil bulk-fetch, bebas dari query rekursif lambat
+                $saldo_awal = $hasRekon ? ($saldoAwalMassal[$k] ?? 0) : 0;
                 $kas_sipd   = $hasRekon ? ($saldo_awal + $total_sp2d - $total_spj - $total_sts) : 0;
                 $selisih    = $hasRekon ? ($kas_sipd - $total_real) : 0;
 
@@ -423,7 +415,6 @@ class RekonKasController extends Controller
 
         $dataRekap = collect();
         
-        // DEFAULT VALUE SUMMARY
         $summary = [
             'total'  => 0,
             'sudah'  => 0,
@@ -448,12 +439,15 @@ class RekonKasController extends Controller
             $rekonRef = DB::table('tabel_rekon')->where('tahun', $tahun)->where('bulan', $bulanStr)->pluck('no_rekon', 'kode_skpd');
             $selisihKet = DB::table('tabel_selisih')->where('tahun', $tahun)->where('bulan', $bulanStr)->pluck('keterangan_posisi_kas', 'kode_skpd');
 
-            // Menggunakan pemetaan memori lokal, menghapus fungsi pemicu latensi n+1
-            $dataRekap = $listTampil->map(function ($s) use ($tahun, $bulan, $sp2d, $spj, $sts, $kasReal, $rekonRef, $selisihKet) {
+            // 💡 OPTIMASI: Panggil kalkulasi saldo awal massal ke Service (Hanya 1x query di luar map loop)
+            $saldoAwalMassal = $this->rekonService->hitungSaldoAwalMassal($tahun, $bulan);
+
+            $dataRekap = $listTampil->map(function ($s) use ($tahun, $bulan, $sp2d, $spj, $sts, $kasReal, $rekonRef, $selisihKet, $saldoAwalMassal) {
                 $noRekon = $rekonRef[$s->kode_skpd] ?? null;
                 
-                // hitungSaldoAwal dipanggil hanya jika rekon ada
-                $saldoAwal = $noRekon ? $this->rekonService->hitungSaldoAwal($tahun, (int)$bulan, $s->kode_skpd) : 0;
+                // 💡 OPTIMASI: Mengambil data dari memori array hasil bulk-fetch, bebas dari query rekursif lambat
+                $saldoAwal = $noRekon ? ($saldoAwalMassal[$s->kode_skpd] ?? 0) : 0;
+                
                 $kasSipd   = $saldoAwal + (float)($sp2d[$s->kode_skpd] ?? 0) - (float)($spj[$s->kode_skpd] ?? 0) - (float)($sts[$s->kode_skpd] ?? 0);
                 $totalKasReal = (float)($kasReal[$s->kode_skpd] ?? 0);
                 $selisih      = (float)number_format($kasSipd - $totalKasReal, 2, '.', '');
@@ -484,7 +478,6 @@ class RekonKasController extends Controller
                 'belum'  => $dataRekap->where('status_rekon', 'BELUM')->count(),
             ];
 
-            // FILTER STATUS JIKA BUKAN ALL (.values() untuk me-reset index array)
             if ($statusFilter !== 'all') {
                 $dataRekap = $dataRekap->where('status_rekon', strtoupper($statusFilter))->values();
             }
